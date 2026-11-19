@@ -62,37 +62,81 @@ func TestDecodeBase64Secret_Success(t *testing.T) {
 }
 
 func TestDecodeBase64Secret_Invalid(t *testing.T) {
-	input := []byte("super-secret-not-base64!@#$")
-
 	tests := []struct {
 		name             string
+		input            []byte
 		dockerSecretName string
 		secretField      string
 		wantMsg          string
 	}{
 		{
 			name:             "docker secret name branch",
+			input:            []byte("super-secret-not-base64!@#$"),
 			dockerSecretName: "my-secret",
 			secretField:      "",
 			wantMsg:          `"my-secret"`,
 		},
 		{
 			name:             "secret field branch",
+			input:            []byte("super-secret-not-base64!@#$"),
 			dockerSecretName: "",
 			secretField:      "api-key",
 			wantMsg:          `secret field "api-key"`,
 		},
 		{
 			name:             "generic branch",
+			input:            []byte("super-secret-not-base64!@#$"),
 			dockerSecretName: "",
 			secretField:      "",
 			wantMsg:          "failed to base64-decode secret:",
+		},
+		{
+			name:             "invalid padding two pads when one expected",
+			input:            []byte("aGVsbG8=="),
+			dockerSecretName: "pad-secret",
+			wantMsg:          `"pad-secret"`,
+		},
+		{
+			name:             "invalid padding single data char with three pads",
+			input:            []byte("a==="),
+			dockerSecretName: "pad-secret",
+			wantMsg:          `"pad-secret"`,
+		},
+		{
+			name:             "invalid padding pad in middle",
+			input:            []byte("a=b="),
+			dockerSecretName: "pad-secret",
+			wantMsg:          `"pad-secret"`,
+		},
+		{
+			name:             "invalid unpadded length",
+			input:            []byte("aGVsb"),
+			dockerSecretName: "len-secret",
+			wantMsg:          `"len-secret"`,
+		},
+		{
+			name:             "url-safe alphabet rejected by standard decoder",
+			input:            []byte("aGVsbG8-_w=="),
+			dockerSecretName: "url-secret",
+			wantMsg:          `"url-secret"`,
+		},
+		{
+			name:             "internal whitespace rejected",
+			input:            []byte("aGV sbG8="),
+			dockerSecretName: "ws-secret",
+			wantMsg:          `"ws-secret"`,
+		},
+		{
+			name:             "corrupted characters",
+			input:            []byte("????"),
+			dockerSecretName: "corrupt-secret",
+			wantMsg:          `"corrupt-secret"`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := DecodeBase64Secret(input, tt.dockerSecretName, tt.secretField)
+			got, err := DecodeBase64Secret(tt.input, tt.dockerSecretName, tt.secretField)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -104,77 +148,8 @@ func TestDecodeBase64Secret_Invalid(t *testing.T) {
 			if !strings.Contains(errMsg, tt.wantMsg) {
 				t.Errorf("error %q should contain %q", errMsg, tt.wantMsg)
 			}
-			if strings.Contains(errMsg, string(input)) {
-				t.Errorf("error %q leaked input secret value %q", errMsg, string(input))
-			}
-		})
-	}
-}
-
-func TestDecodeBase64Secret_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       []byte
-		expectError bool
-		want        []byte
-	}{
-		{
-			name:        "invalid padding two pads when one expected",
-			input:       []byte("aGVsbG8=="),
-			expectError: true,
-		},
-		{
-			name:        "invalid padding single data char with three pads",
-			input:       []byte("a==="),
-			expectError: true,
-		},
-		{
-			name:        "invalid padding pad in middle",
-			input:       []byte("a=b="),
-			expectError: true,
-		},
-		{
-			name:        "invalid unpadded length",
-			input:       []byte("aGVsb"),
-			expectError: true,
-		},
-		{
-			name:        "url-safe alphabet rejected by standard decoder",
-			input:       []byte("aGVsbG8-_w=="),
-			expectError: true,
-		},
-		{
-			name:        "corrupted characters",
-			input:       []byte("????"),
-			expectError: true,
-		},
-		{
-			name:        "internal whitespace rejected",
-			input:       []byte("aGV sbG8="),
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := DecodeBase64Secret(tt.input, "test-secret", "test-field")
-			if tt.expectError {
-				if err == nil {
-					t.Fatalf("expected error for %s, got nil", tt.name)
-				}
-				if got != nil {
-					t.Errorf("expected nil result on error, got %v", got)
-				}
-				if strings.Contains(err.Error(), string(tt.input)) {
-					t.Errorf("error %q leaked secret input %q", err.Error(), string(tt.input))
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error for %s: %v", tt.name, err)
-				}
-				if !bytes.Equal(got, tt.want) {
-					t.Errorf("got %v, want %v", got, tt.want)
-				}
+			if strings.Contains(errMsg, string(tt.input)) {
+				t.Errorf("error %q leaked input secret value %q", errMsg, string(tt.input))
 			}
 		})
 	}

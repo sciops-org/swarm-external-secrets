@@ -290,7 +290,7 @@ elapsed=0
 saw_error=0
 error_details=""
 
-while [ "${elapsed}" -lt 60 ]; do
+while [[ "${elapsed}" -lt 60 ]]; do
     task_err=$(docker service ps "${STACK_NAME_INVALID}_invalid_app" --no-trunc --format '{{.Error}}' 2>/dev/null || true)
     daemon_err=$(docker_daemon_logs 2>/dev/null || true)
 
@@ -316,11 +316,11 @@ running_count=$(docker stack ps "${STACK_NAME_INVALID}" \
     --format '{{.CurrentState}}' 2>/dev/null \
     | grep -c "Running" || true)
 
-if [ "${running_count}" -gt 0 ]; then
+if [[ "${running_count}" -gt 0 ]]; then
     die "Case 3 FAIL: service with invalid base64 unexpectedly reached running state"
 fi
 
-if [ "${saw_error}" -eq 0 ]; then
+if [[ "${saw_error}" -eq 0 ]]; then
     info "Service ps diagnostics:"
     docker service ps "${STACK_NAME_INVALID}_invalid_app" --no-trunc || true
     die "Case 3 FAIL: service did not report base64 decode error within 60s"
