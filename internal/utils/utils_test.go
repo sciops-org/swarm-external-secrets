@@ -110,3 +110,72 @@ func TestDecodeBase64Secret_Invalid(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeBase64Secret_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       []byte
+		expectError bool
+		want        []byte
+	}{
+		{
+			name:        "invalid padding two pads when one expected",
+			input:       []byte("aGVsbG8=="),
+			expectError: true,
+		},
+		{
+			name:        "invalid padding single data char with three pads",
+			input:       []byte("a==="),
+			expectError: true,
+		},
+		{
+			name:        "invalid padding pad in middle",
+			input:       []byte("a=b="),
+			expectError: true,
+		},
+		{
+			name:        "invalid unpadded length",
+			input:       []byte("aGVsb"),
+			expectError: true,
+		},
+		{
+			name:        "url-safe alphabet rejected by standard decoder",
+			input:       []byte("aGVsbG8-_w=="),
+			expectError: true,
+		},
+		{
+			name:        "corrupted characters",
+			input:       []byte("????"),
+			expectError: true,
+		},
+		{
+			name:        "internal whitespace rejected",
+			input:       []byte("aGV sbG8="),
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := DecodeBase64Secret(tt.input, "test-secret", "test-field")
+			if tt.expectError {
+				if err == nil {
+					t.Fatalf("expected error for %s, got nil", tt.name)
+				}
+				if got != nil {
+					t.Errorf("expected nil result on error, got %v", got)
+				}
+				if strings.Contains(err.Error(), string(tt.input)) {
+					t.Errorf("error %q leaked secret input %q", err.Error(), string(tt.input))
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error for %s: %v", tt.name, err)
+				}
+				if !bytes.Equal(got, tt.want) {
+					t.Errorf("got %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
