@@ -4,7 +4,7 @@ This document describes the automatic secret rotation feature of the Swarm Exter
 
 ## Overview
 
-The plugin automatically monitors secrets in Vault and updates the corresponding Docker Swarm secrets and services when changes are detected. This ensures that applications always use the latest secret values without manual intervention.
+The plugin monitors tracked secrets in providers that support rotation, including Doppler, and updates the corresponding Docker Swarm secrets and services when changes are detected.
 
 Polling is the default. Vault also supports an opt-in HTTP notification listener
 with `USE_WEBHOOK=true`; a healthy listener replaces periodic polling. See
@@ -18,9 +18,9 @@ not renewed.
 
 ## How It Works
 
-1. **Secret Tracking**: When a Docker service requests a secret, the plugin tracks the mapping between the Docker secret and its corresponding Vault path.
+1. **Secret Tracking**: When a Docker service requests a secret, the plugin tracks the mapping between the Docker secret and its provider path or key.
 
-2. **Change Detection**: In polling mode, a background goroutine periodically checks Vault for changes by comparing SHA256 hashes of secret values. In Vault webhook mode, accepted events trigger the check. A listener startup failure falls back to polling.
+2. **Change Detection**: In polling mode, a background goroutine checks the provider by comparing SHA256 hashes of secret values. Vault webhook events can trigger checks instead of polling; a listener startup failure falls back to polling. Doppler webhooks add checks between polling intervals. A repeated request from another consumer does not acknowledge a change before existing services rotate.
 
 3. **Automatic Rotation**: When a change is detected:
    - A new version of the Docker secret is created with the updated value
@@ -45,6 +45,19 @@ For Vault and OpenBao, rotation tracking uses the same configured mount path as 
 - Example custom mounts: `kv`, `prod`, `dev`
 
 If a custom mount path is configured, rotation monitoring checks that mount instead of assuming `secret/data/...`.
+
+### Doppler Caching and Webhooks
+
+Normal Doppler reads reuse cached values for `DOPPLER_CACHE_TTL` (default `30s`).
+Each rotation cycle invalidates that cache and fetches the tracked secret names
+once per project and config, so a long cache TTL does not delay change detection
+until the TTL expires.
+
+Signed webhooks can trigger a reconciliation between polling intervals. The
+listener requires `ENABLE_ROTATION=true` and `DOPPLER_WEBHOOK_ENABLE=true`.
+Configure `DOPPLER_WEBHOOK_SECRET` to verify deliveries; unsigned requests require
+an explicit development-only option. Polling continues when webhooks are enabled.
+See the [Doppler guide](doppler.md#signed-webhooks) for configuration and tests.
 
 ### Example Configuration
 
@@ -149,8 +162,8 @@ services:
 ## Limitations
 
 - Services must support graceful secret updates (restart when secrets change)
-- Polling frequency is limited by the configured interval
-- Webhook mode requires a separate sender and retries for failed or busy requests; missed events have no periodic polling recovery while the listener is healthy
+- Polling frequency is limited by the configured interval; Doppler webhooks can trigger an additional check between polls
+- Vault webhook mode requires a separate sender and retries for failed or busy requests; missed events have no periodic polling recovery while its listener is healthy
 - Docker Swarm must be running in manager mode for secret management
 
 ## Troubleshooting
@@ -161,7 +174,7 @@ If rotation is not working:
 2. Verify plugin has access to Docker socket
 3. Ensure plugin is running on a manager node
 4. Check plugin logs for error messages
-5. Verify Vault connectivity and permissions
+5. Verify connectivity and permissions for the configured provider
 
 ## Security Considerations
 

@@ -347,7 +347,81 @@ The plugin resolves which secret to fetch using the following logic:
 
 ---
 
-### 6. Infisical
+### 6. Doppler
+
+**Provider Type:** `doppler`
+
+See the [Doppler guide](doppler.md) for setup, a complete stack example, and mock or live smoke tests.
+
+**Environment Variables:**
+
+| Variable | Description | Default |
+|---|---|---|
+| `DOPPLER_TOKEN` | Doppler service token or CLI token (required) | — |
+| `DOPPLER_PROJECT` | Doppler project (required for non-service tokens) | — |
+| `DOPPLER_CONFIG` | Doppler config/environment (`dev`, `stg`, `prd`); required for non-service tokens | — |
+| `DOPPLER_API_URL` | API origin, without an API path or query. HTTPS is required except for loopback hosts; redirects are rejected. The client adds the v3 API path. | `https://api.doppler.com` |
+| `DOPPLER_CACHE_TTL` | Cache duration for secret downloads; `0s` disables reuse of cached values | `30s` |
+| `DOPPLER_WEBHOOK_SECRET` | Signing secret used to verify `X-Doppler-Signature`. Required when the listener is enabled unless `DOPPLER_WEBHOOK_INSECURE=true`. | — |
+| `DOPPLER_WEBHOOK_INSECURE` | Accept unsigned webhooks. Local development only. | `false` |
+| `DOPPLER_WEBHOOK_ENABLE` | Enable the webhook listener for event-driven rotation | `false` |
+| `DOPPLER_WEBHOOK_PORT` | Port for the webhook listener (host network) | `8081` |
+| `DOPPLER_WEBHOOK_PATH` | Literal HTTP path beginning with `/`, without wildcards or whitespace | `/webhooks/doppler` |
+
+**Authentication:**
+
+- **Service token (production):** `dp.st.*` tokens are scoped to a single project+config; `DOPPLER_PROJECT` and `DOPPLER_CONFIG` are optional.
+- **CLI/personal token (development):** requires `DOPPLER_PROJECT` and `DOPPLER_CONFIG`.
+
+**Example (service token):**
+```bash
+docker plugin set swarm-external-secrets:latest \
+    SECRETS_PROVIDER="doppler" \
+    DOPPLER_TOKEN="dp.st.production.xxx" \
+    ENABLE_ROTATION="true" \
+    ROTATION_INTERVAL="30s"
+```
+
+**Example (CLI token for local development):**
+```bash
+docker plugin set swarm-external-secrets:latest \
+    SECRETS_PROVIDER="doppler" \
+    DOPPLER_TOKEN="$(doppler configure get token --plain)" \
+    DOPPLER_PROJECT="my-api" \
+    DOPPLER_CONFIG="dev"
+```
+
+**Secret Labels:**
+
+- `doppler_secret_name` — Doppler secret key (e.g. `MYSQL_PASSWORD`)
+- `doppler_project` — Optional per-secret project override
+- `doppler_config` — Optional per-secret config override
+
+If `doppler_secret_name` is omitted, the Docker secret name is uppercased to match Doppler naming conventions (`mysql_password` → `MYSQL_PASSWORD`).
+
+**Webhooks (event-driven rotation):**
+
+Instead of only polling every `ROTATION_INTERVAL`, the plugin can rotate immediately when Doppler reports a change. Enable the listener and configure a [Doppler webhook](https://docs.doppler.com/docs/webhooks) that POSTs to it.
+
+```bash
+docker plugin set swarm-external-secrets:latest \
+    SECRETS_PROVIDER="doppler" \
+    DOPPLER_TOKEN="dp.st.production.xxx" \
+    ENABLE_ROTATION="true" \
+    DOPPLER_WEBHOOK_ENABLE="true" \
+    DOPPLER_WEBHOOK_PORT="8081" \
+    DOPPLER_WEBHOOK_SECRET="<your-signing-secret>"
+```
+
+- On a `config.secrets.update` delivery, the plugin verifies the `X-Doppler-Signature` HMAC-SHA256 header against `DOPPLER_WEBHOOK_SECRET`, drops its Doppler cache, and runs a rotation check right away.
+- The plugin serves HTTP on the host network at `http://<host>:<DOPPLER_WEBHOOK_PORT><DOPPLER_WEBHOOK_PATH>`. Use a reverse proxy to terminate HTTPS when exposing this listener outside the host.
+- `DOPPLER_WEBHOOK_SECRET` is required while the listener is enabled unless `DOPPLER_WEBHOOK_INSECURE=true`, which accepts unsigned requests and is only for local development.
+- The listener starts only when rotation is enabled and the provider supports it. Deliveries are processed asynchronously; bursts share one pending reconciliation rather than starting one rotation for every delivery.
+- Webhook delivery is best-effort; the poll-based `ROTATION_INTERVAL` remains the safety net. Each rotation cycle drops the cache once, then downloads the tracked secret names for that project and config in one request.
+
+---
+
+### 7. Infisical
 
 **Provider Type:** `infisical`
 
@@ -394,7 +468,7 @@ See [`docs/infisical.md`](./infisical.md) for machine-identity setup and usage d
 
 ---
 
-### 7. GCP Secret Manager (Placeholder)
+### 8. GCP Secret Manager (Placeholder)
 
 **Provider Type:** `gcp`
 
@@ -485,6 +559,23 @@ secrets:
       oci_stage: "previous"
       oci_field: "password"
 ```
+
+### Doppler
+
+```yaml
+secrets:
+  mysql_password:
+    driver: swarm-external-secrets:latest
+    labels:
+      doppler_secret_name: "MYSQL_PASSWORD"
+
+  api_key:
+    driver: swarm-external-secrets:latest
+    labels:
+      doppler_secret_name: "API_KEY"
+```
+
+For multiple Doppler configs, run separate plugin instances with different service tokens (one token per project+config), similar to the Vault + OpenBao pattern above.
 
 ### Infisical
 
@@ -609,6 +700,13 @@ secrets:
 - The `oci_vault_ocid` label overrides the plugin-level `OCI_VAULT_OCID` per secret, allowing a single plugin instance to pull secrets from multiple vaults
 - Rotation is supported
 
+### Doppler
+- Uses the Doppler REST API. `DOPPLER_API_URL` is the origin; requests go to `/v3/configs/config/secrets/download` and include only the requested secret names.
+- Service tokens are scoped to one project+config; use multiple plugin instances for multiple environments
+- Downloads are cached (default 30s). A rotation cycle and a webhook each drop that cache before reading, so a long TTL does not hide a changed secret. Network errors, 429s, and retryable 5xx responses are retried with jitter, honoring `Retry-After`.
+- Optional webhook listener enables event-driven rotation, verified via the `X-Doppler-Signature` HMAC-SHA256 header. The listener does not start without `DOPPLER_WEBHOOK_SECRET` unless `DOPPLER_WEBHOOK_INSECURE=true`.
+- Secret names default to the uppercased Docker secret name when `doppler_secret_name` is not set
+
 ### Infisical
 - Uses the official Infisical Go SDK with Universal Auth or a bearer token
 - The SDK refreshes Universal Auth tokens; `INFISICAL_TOKEN` is used as-is
@@ -622,11 +720,13 @@ secrets:
 
 ## Secret Reuse Control
 
-The `secret_reuse` label controls whether Docker Swarm should cache and reuse a secret value or fetch it fresh from the provider on every request.
+The `secret_reuse` label controls whether Docker Swarm may reuse the plugin's response or must call the plugin again.
 
-**Default behaviour:** secrets are always fetched fresh from the provider.
+**Default behaviour:** reuse is allowed unless the Docker secret name contains `cert`, `token`, or `dynamic`.
 
-**With `secret_reuse: "true"`:** Docker Swarm caches the secret value and reuses it without calling the provider again.
+**With `secret_reuse: "true"`:** reuse is allowed, including for names covered by the default exceptions.
+
+**With `secret_reuse: "false"`:** Swarm is told to call the plugin again. Provider caches still apply; for example, a normal Doppler read can use `DOPPLER_CACHE_TTL`. Rotation checks refresh the Doppler cache independently of this label.
 
 ### Usage
 ```yaml
@@ -636,5 +736,5 @@ secrets:
     labels:
       vault_path: "database/mysql"
       vault_field: "password"
-      secret_reuse: "true"   # reuse cached value, do not fetch again
+      secret_reuse: "true"   # allow Swarm to reuse the plugin response
 ```

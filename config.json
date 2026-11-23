@@ -98,7 +98,7 @@
     },
     {
       "name": "SECRETS_PROVIDER",
-      "description": "Secrets provider type (e.g., vault, aws, azure, openbao, oci)",
+      "description": "Secrets provider type (e.g., vault, aws, azure, openbao, oci, infisical, doppler)",
       "settable": ["value"]
     },
     {
@@ -384,6 +384,56 @@
     {
       "name": "OPENBAO_SKIP_VERIFY",
       "description": "Skip TLS certificate verification for OpenBao (true/false)",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_TOKEN",
+      "description": "Doppler service token or CLI token",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_PROJECT",
+      "description": "Doppler project (required for non-service tokens)",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_CONFIG",
+      "description": "Doppler config/environment (dev, stg, prd); required for non-service tokens",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_API_URL",
+      "description": "Doppler API origin without a path or query (default https://api.doppler.com). HTTP is allowed only for loopback hosts; redirects are rejected.",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_CACHE_TTL",
+      "description": "Cache duration for Doppler config downloads (e.g. 30s, 1m)",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_WEBHOOK_SECRET",
+      "description": "Doppler webhook signing secret used to verify X-Doppler-Signature. Required when DOPPLER_WEBHOOK_ENABLE=true unless DOPPLER_WEBHOOK_INSECURE=true.",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_WEBHOOK_INSECURE",
+      "description": "Accept unsigned Doppler webhooks (true/false). Local development only, default false",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_WEBHOOK_ENABLE",
+      "description": "Enable the Doppler webhook listener for event-driven rotation (true/false), default false",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_WEBHOOK_PORT",
+      "description": "Port for the Doppler webhook listener (host network), default 8081",
+      "settable": ["value"]
+    },
+    {
+      "name": "DOPPLER_WEBHOOK_PATH",
+      "description": "Literal HTTP path beginning with / for the Doppler webhook listener (no wildcards or whitespace), default /webhooks/doppler",
       "settable": ["value"]
     },
     {

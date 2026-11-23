@@ -4,7 +4,7 @@
 ---
 
 
-A Docker Swarm secrets plugin that integrates with multiple secret management providers including HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, OpenBao, OCI Vault, and Infisical.
+A Docker Swarm secrets plugin that integrates with multiple secret management providers including HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, OpenBao, OCI Vault, Infisical, and Doppler.
 
 ### 🚀 Updates
 
@@ -33,7 +33,7 @@ has a known compatibility gap with HCP's SHA-512 signatures.
 
 ## Features
 
-- **Multi-Provider Support**: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, OpenBao, OCI Vault, Infisical
+- **Multi-Provider Support**: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, OpenBao, OCI Vault, Infisical, Doppler
 - **Multiple Auth Methods**: Support for various authentication methods per provider
 - **Automatic Secret Rotation**: Monitor providers for changes and automatically update Docker secrets and services
 - **Base64 Secret Decoding (HashiCorp Vault & OpenBao)**: Decode base64-encoded secrets (e.g. binary JKS/PKCS12 keystores) before delivery via `base64_decode: "true"` for HashiCorp Vault and OpenBao
@@ -61,6 +61,9 @@ docker plugin set swarm-external-secrets:latest SECRETS_PROVIDER="openbao"
 
 # OCI Vault
 docker plugin set swarm-external-secrets:latest SECRETS_PROVIDER="oci"
+
+# Doppler
+docker plugin set swarm-external-secrets:latest SECRETS_PROVIDER="doppler"
 
 # Infisical
 docker plugin set swarm-external-secrets:latest SECRETS_PROVIDER="infisical"
@@ -207,6 +210,7 @@ docker plugin set swarm-external-secrets:latest \
 | Azure Key Vault | ✅ Stable | Service Principal, Access Token | ✅ |
 | OpenBao | ✅ Stable | Token, AppRole, JWT | ✅ |
 | OCI Vault | 🚧 Beta | API Key, Instance Principal | ✅ |
+| Doppler | 🚧 Beta | Service Token, CLI Token | ✅ |
 | Infisical | ✅ Stable | Universal Auth, Access Token | ✅ |
 | GCP Secret Manager | 🚧 Placeholder | - | - |
 
@@ -255,6 +259,32 @@ docker plugin set swarm-external-secrets:latest \
     OCI_PRIVATE_KEY="${OCI_KEY}" \
     OCI_VAULT_OCID="ocid1.vault.oc1..example"
 ```
+
+### Doppler
+
+Configure an installed, disabled plugin with a service token scoped to your Doppler project and config:
+
+```bash
+docker plugin set swarm-external-secrets:latest \
+    SECRETS_PROVIDER="doppler" \
+    DOPPLER_TOKEN="dp.st.example" \
+    ENABLE_ROTATION="true" \
+    ROTATION_INTERVAL="30s"
+```
+
+Reference a Doppler key in your stack's secrets:
+
+```yaml
+secrets:
+  api_key:
+    driver: swarm-external-secrets:latest
+    labels:
+      doppler_secret_name: "API_KEY"
+```
+
+See the [Doppler guide](https://sciops-org.github.io/swarm-external-secrets/doppler/)
+for a complete stack example, CLI-token settings, signed webhooks, and smoke tests
+that run without a Doppler account.
 
 ### License
 
