@@ -54,6 +54,9 @@ func TestDecodeBase64Secret_Success(t *testing.T) {
 			if err != nil {
 				t.Fatalf("DecodeBase64Secret() unexpected error = %v", err)
 			}
+			if got == nil {
+				t.Fatal("DecodeBase64Secret() returned nil on success")
+			}
 			if !bytes.Equal(got, tt.want) {
 				t.Errorf("DecodeBase64Secret() = %v, want %v", got, tt.want)
 			}

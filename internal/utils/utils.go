@@ -138,7 +138,8 @@ func ShouldBase64Decode(labels map[string]string) bool {
 // DecodeBase64Secret decodes a base64-encoded secret value into its raw bytes.
 func DecodeBase64Secret(value []byte, dockerSecretName, secretField string) ([]byte, error) {
 	trimmed := bytes.TrimSpace(value)
-	decoded, err := base64.StdEncoding.DecodeString(string(trimmed))
+	// Decode bytes directly to avoid copying the encoded secret into a string.
+	decoded, err := base64.StdEncoding.AppendDecode([]byte{}, trimmed)
 	if err != nil {
 		switch {
 		case dockerSecretName != "":
