@@ -132,16 +132,7 @@ func ExtractSecretValue(secretString, field string) ([]byte, error) {
 
 // ShouldBase64Decode checks if the base64_decode label is explicitly set to true.
 func ShouldBase64Decode(labels map[string]string) bool {
-	if labels == nil {
-		return false
-	}
-
-	val, ok := labels["base64_decode"]
-	if !ok {
-		return false
-	}
-
-	return strings.EqualFold(strings.TrimSpace(val), "true")
+	return strings.EqualFold(strings.TrimSpace(labels["base64_decode"]), "true")
 }
 
 // DecodeBase64Secret decodes a base64-encoded secret value into its raw bytes.

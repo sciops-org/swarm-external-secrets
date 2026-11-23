@@ -48,7 +48,7 @@ func TestOpenBaoProvider_BuildSecretPathThroughConfig(t *testing.T) {
 }
 
 func TestOpenBaoProvider_GetSecret_Base64Decode(t *testing.T) {
-	testBase64Decode(t, func(serverURL string) SecretsProvider {
+	runSharedBase64DecodeCases(t, func(serverURL string) SecretsProvider {
 		provider := &OpenBaoProvider{}
 		if err := provider.Initialize(map[string]string{
 			"OPENBAO_ADDR":  serverURL,

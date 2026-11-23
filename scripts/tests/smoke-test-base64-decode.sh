@@ -19,6 +19,7 @@ case "${PROVIDER}" in
         CLI_BIN="vault"
         CLI_ADDR_ENV="VAULT_ADDR"
         CLI_TOKEN_ENV="VAULT_TOKEN"
+        PLUGIN_CONFIG_PREFIX="VAULT"
         LABEL_PATH="vault_path"
         LABEL_FIELD="vault_field"
         ;;
@@ -29,6 +30,7 @@ case "${PROVIDER}" in
         CLI_BIN="bao"
         CLI_ADDR_ENV="BAO_ADDR"
         CLI_TOKEN_ENV="BAO_TOKEN"
+        PLUGIN_CONFIG_PREFIX="OPENBAO"
         LABEL_PATH="openbao_path"
         LABEL_FIELD="openbao_field"
         ;;
@@ -81,6 +83,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# verify_secret removes all whitespace. Compare fixture values directly here
+# so unexpected spaces cannot hide decoding errors.
+assert_secret_value() {
+    local secret_name="$1"
+    local expected="$2"
+    local description="$3"
+    local actual
+
+    info "Verifying ${description}..."
+    actual=$(docker exec "${APP_CONTAINER_ID}" cat "/run/secrets/${secret_name}") \
+        || die "${description} FAIL: could not read ${secret_name}"
+    if [[ "${actual}" != "${expected}" ]]; then
+        die "${description} FAIL: expected '${expected}', got '${actual}'"
+    fi
+    success "${description} PASS"
+}
+
 # Start dev container
 info "Starting ${PROVIDER} dev container..."
 docker run -d \
@@ -132,25 +151,14 @@ success "Got auth token."
 info "Building plugin and configuring ${PROVIDER} provider..."
 build_plugin
 
-if [[ "${PROVIDER}" == "vault" ]]; then
-    docker plugin set "${PLUGIN_NAME}" \
-        SECRETS_PROVIDER="vault" \
-        VAULT_ADDR="${SERVER_ADDR}" \
-        VAULT_AUTH_METHOD="token" \
-        VAULT_TOKEN="${AUTH_TOKEN}" \
-        VAULT_MOUNT_PATH="secret" \
-        ENABLE_ROTATION="false" \
-        ENABLE_MONITORING="false"
-elif [[ "${PROVIDER}" == "openbao" ]]; then
-    docker plugin set "${PLUGIN_NAME}" \
-        SECRETS_PROVIDER="openbao" \
-        OPENBAO_ADDR="${SERVER_ADDR}" \
-        OPENBAO_AUTH_METHOD="token" \
-        OPENBAO_TOKEN="${AUTH_TOKEN}" \
-        OPENBAO_MOUNT_PATH="secret" \
-        ENABLE_ROTATION="false" \
-        ENABLE_MONITORING="false"
-fi
+docker plugin set "${PLUGIN_NAME}" \
+    SECRETS_PROVIDER="${PROVIDER}" \
+    "${PLUGIN_CONFIG_PREFIX}_ADDR=${SERVER_ADDR}" \
+    "${PLUGIN_CONFIG_PREFIX}_AUTH_METHOD=token" \
+    "${PLUGIN_CONFIG_PREFIX}_TOKEN=${AUTH_TOKEN}" \
+    "${PLUGIN_CONFIG_PREFIX}_MOUNT_PATH=secret" \
+    ENABLE_ROTATION="false" \
+    ENABLE_MONITORING="false"
 success "Plugin configured with ${PROVIDER} token."
 
 # Enable plugin
@@ -215,32 +223,12 @@ info "Retrieving running container ID..."
 APP_CONTAINER_ID=$(get_running_container_id "${STACK_NAME}" "app")
 [[ -n "${APP_CONTAINER_ID}" ]] || die "Failed to get running container ID for stack '${STACK_NAME}'"
 
-# Case 1: secret with base64_decode=true is delivered decoded
-info "Verifying Case 1: secret with base64_decode=true is delivered decoded..."
-ACTUAL_DECODED=$(docker exec "${APP_CONTAINER_ID}" cat /run/secrets/secret_b64_decoded 2>/dev/null || true)
-if [[ "${ACTUAL_DECODED}" == "${RAW_VALUE}" ]]; then
-    success "Case 1 PASS: secret with base64_decode=true delivered decoded value '${ACTUAL_DECODED}'"
-else
-    die "Case 1 FAIL: expected '${RAW_VALUE}', got '${ACTUAL_DECODED}'"
-fi
-
-# Case 2: secret with base64_decode=false is delivered unchanged as raw base64 (opt-in verified)
-info "Verifying Case 2: secret with base64_decode=false is delivered unchanged as raw base64..."
-ACTUAL_PLAIN=$(docker exec "${APP_CONTAINER_ID}" cat /run/secrets/secret_b64_plain 2>/dev/null || true)
-if [[ "${ACTUAL_PLAIN}" == "${BASE64_VALUE}" ]]; then
-    success "Case 2 PASS: secret with base64_decode=false delivered raw base64 value '${ACTUAL_PLAIN}' (opt-in verified)"
-else
-    die "Case 2 FAIL: expected '${BASE64_VALUE}', got '${ACTUAL_PLAIN}'"
-fi
-
-# Optional Case: secret with surrounding whitespace is decoded correctly
-info "Verifying Optional Case: secret with surrounding whitespace is decoded correctly..."
-ACTUAL_WS=$(docker exec "${APP_CONTAINER_ID}" cat /run/secrets/secret_b64_ws 2>/dev/null || true)
-if [[ "${ACTUAL_WS}" == "${RAW_VALUE}" ]]; then
-    success "Optional Case PASS: secret with surrounding whitespace decoded correctly to '${ACTUAL_WS}'"
-else
-    die "Optional Case FAIL: expected '${RAW_VALUE}', got '${ACTUAL_WS}'"
-fi
+assert_secret_value secret_b64_decoded "${RAW_VALUE}" \
+    "Case 1: base64_decode=true delivers decoded bytes"
+assert_secret_value secret_b64_plain "${BASE64_VALUE}" \
+    "Case 2: base64_decode=false preserves the stored value"
+assert_secret_value secret_b64_ws "${RAW_VALUE}" \
+    "Whitespace case: surrounding whitespace is trimmed before decoding"
 
 # Clean up valid stack
 info "Removing valid test stack..."
