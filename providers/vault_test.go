@@ -16,7 +16,7 @@ import (
 
 	"github.com/docker/go-plugins-helpers/secrets"
 
-	"github.com/sugar-org/swarm-external-secrets/internal/vaultcompat"
+	"github.com/sciops-org/swarm-external-secrets/internal/vaultcompat"
 )
 
 const vaultPathLabel = "vault_path"
